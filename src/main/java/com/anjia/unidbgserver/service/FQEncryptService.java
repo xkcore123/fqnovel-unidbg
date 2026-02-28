@@ -13,11 +13,13 @@ import java.util.Map;
 @Service
 public class FQEncryptService {
 
-    private final IdleFQ idleFQ;
+    private final Object engineLock = new Object();
+    private final boolean verbose;
+    private volatile IdleFQ idleFQ;
 
     public FQEncryptService(UnidbgProperties properties) {
-        // 根据配置设置是否显示日志
-        this.idleFQ = new IdleFQ(properties.isVerbose());
+        this.verbose = properties.isVerbose();
+        this.idleFQ = new IdleFQ(this.verbose);
         log.info("FQ签名服务初始化完成");
     }
 
@@ -29,29 +31,33 @@ public class FQEncryptService {
      * @return 包含各种签名header的Map
      */
     public Map<String, String> generateSignatureHeaders(String url, String headers) {
-        try {
-            log.debug("准备生成FQ签名 - URL: {}", url);
-//            log.debug("准备生成FQ签名 - Headers: {}", headers);
+        synchronized (engineLock) {
+            try {
+                log.debug("准备生成FQ签名 - URL: {}", url);
 
-            // 调用IdleFQ的签名生成方法
-            String signatureResult = idleFQ.generateSignature(url, headers);
+                IdleFQ currentEngine = idleFQ;
+                if (currentEngine == null) {
+                    log.error("签名引擎未初始化");
+                    return createErrorResponse("签名引擎未初始化");
+                }
 
-            if (signatureResult == null || signatureResult.isEmpty()) {
-                log.error("签名生成失败，返回结果为空");
-                return createErrorResponse("签名生成失败");
+                String signatureResult = currentEngine.generateSignature(url, headers);
+
+                if (signatureResult == null || signatureResult.isEmpty()) {
+                    log.error("签名生成失败，返回结果为空");
+                    return createErrorResponse("签名生成失败");
+                }
+
+                Map<String, String> result = parseSignatureResult(signatureResult);
+                result.remove("X-Neptune");
+
+                log.debug("FQ签名生成成功: {}", result);
+                return result;
+
+            } catch (Exception e) {
+                log.error("生成FQ签名失败", e);
+                return createErrorResponse("生成失败: " + e.getMessage());
             }
-
-            // 解析返回的签名结果
-            Map<String, String> result = parseSignatureResult(signatureResult);
-
-            result.remove("X-Neptune");
-
-            log.debug("FQ签名生成成功: {}", result);
-            return result;
-
-        } catch (Exception e) {
-            log.error("生成FQ签名失败", e);
-            return createErrorResponse("生成失败: " + e.getMessage());
         }
     }
 
@@ -134,17 +140,35 @@ public class FQEncryptService {
     }
 
     /**
+     * 重置签名引擎实例
+     */
+    public void reset() {
+        synchronized (engineLock) {
+            if (idleFQ != null) {
+                try {
+                    idleFQ.destroy();
+                } catch (Exception e) {
+                    log.warn("销毁旧签名引擎失败，继续重建", e);
+                }
+            }
+
+            idleFQ = new IdleFQ(verbose);
+            log.info("FQ签名服务重置完成");
+        }
+    }
+
+    /**
      * 清理资源
      */
     public void destroy() {
-        // 清理IdleFQ资源
-        if (idleFQ != null) {
-            idleFQ.destroy();
+        synchronized (engineLock) {
+            if (idleFQ != null) {
+                idleFQ.destroy();
+                idleFQ = null;
+            }
+
+            TempFileUtils.cleanup();
+            log.info("FQ签名服务资源释放完成");
         }
-
-        // 清理临时文件
-        TempFileUtils.cleanup();
-
-        log.info("FQ签名服务资源释放完成");
     }
 }

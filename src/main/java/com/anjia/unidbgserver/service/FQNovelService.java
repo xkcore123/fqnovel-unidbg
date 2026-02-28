@@ -49,6 +49,8 @@ public class FQNovelService {
     @Resource
     private DevicePoolService devicePoolService;
 
+    private static final int ILLEGAL_ACCESS_RECOVERY_THRESHOLD = 2;
+
     private final RestTemplate restTemplate = new RestTemplate();
     private final ObjectMapper objectMapper = new ObjectMapper();
 
@@ -80,6 +82,7 @@ public class FQNovelService {
             AtomicReference<DeviceInfo> successfulDeviceRef) {
         return CompletableFuture.supplyAsync(() -> {
             int maxAttempts = resolveMaxAttempts(requestedDevice);
+            int consecutiveIllegalAccessCount = 0;
             for (int attempt = 1; attempt <= maxAttempts; attempt++) {
                 DeviceInfo currentDevice = requestedDevice != null ? requestedDevice : devicePoolService.nextDevice();
                 String deviceCacheKey = FQRegisterKeyService.buildDeviceCacheKey(currentDevice);
@@ -116,33 +119,19 @@ public class FQNovelService {
                         throw new RuntimeException("EMPTY_RESPONSE");
                     }
 
-                    if (responseBody.contains("\"code\":110") || responseBody.contains("ILLEGAL_ACCESS")) {
-                        log.warn("检测到ILLEGAL_ACCESS，attempt={}/{}, deviceId={}, deviceCacheKey={}, key_register_ts={}, fixedDevice={}",
-                            attempt,
-                            maxAttempts,
-                            currentDevice != null ? currentDevice.getDeviceId() : null,
-                            deviceCacheKey,
-                            registerKeyService.getKeyRegisterTs(currentDevice),
-                            requestedDevice != null);
-
-                        try {
-                            registerKeyService.refreshRegisterKey(currentDevice);
-                            log.info("ILLEGAL_ACCESS后刷新registerkey成功，deviceId={}, deviceCacheKey={}, key_register_ts={}",
-                                currentDevice != null ? currentDevice.getDeviceId() : null,
-                                deviceCacheKey,
-                                registerKeyService.getKeyRegisterTs(currentDevice));
-                        } catch (Exception refreshEx) {
-                            log.warn("ILLEGAL_ACCESS后刷新registerkey失败，deviceId={}, deviceCacheKey={}",
-                                currentDevice != null ? currentDevice.getDeviceId() : null,
-                                deviceCacheKey,
-                                refreshEx);
-                        }
-
-                        if (requestedDevice == null) {
-                            devicePoolService.removeAndReplenish(currentDevice, "batch_full illegal_access");
-                        }
+                    int illegalAccessState = handleIllegalAccessRecoveryIfNeeded(
+                        responseBody,
+                        currentDevice,
+                        requestedDevice,
+                        attempt,
+                        maxAttempts,
+                        consecutiveIllegalAccessCount
+                    );
+                    if (illegalAccessState >= 0) {
+                        consecutiveIllegalAccessCount = illegalAccessState;
                         continue;
                     }
+                    consecutiveIllegalAccessCount = 0;
 
                     FqIBatchFullResponse batchResponse = objectMapper.readValue(responseBody, FqIBatchFullResponse.class);
 
@@ -169,6 +158,7 @@ public class FQNovelService {
                     return FQNovelResponse.success(batchResponse);
                 } catch (Exception e) {
                     String message = e.getMessage() != null ? e.getMessage() : "";
+                    consecutiveIllegalAccessCount = 0;
                     if (isEmptyResponseError(e)) {
                         log.warn("检测到空响应，attempt={}/{}, deviceId={}, deviceCacheKey={}, key_register_ts={}, fixedDevice={}",
                             attempt,
@@ -241,6 +231,90 @@ public class FQNovelService {
         String message = e.getMessage();
         return "EMPTY_RESPONSE".equals(message)
             || (message != null && message.contains("No content to map due to end-of-input"));
+    }
+
+    private int handleIllegalAccessRecoveryIfNeeded(
+            String responseBody,
+            DeviceInfo currentDevice,
+            DeviceInfo requestedDevice,
+            int attempt,
+            int maxAttempts,
+            int consecutiveIllegalAccessCount) {
+        if (!isIllegalAccessResponse(responseBody)) {
+            return -1;
+        }
+
+        return onIllegalAccessDetected(currentDevice, requestedDevice, attempt, maxAttempts, consecutiveIllegalAccessCount);
+    }
+
+    private int onIllegalAccessDetected(
+            DeviceInfo currentDevice,
+            DeviceInfo requestedDevice,
+            int attempt,
+            int maxAttempts,
+            int consecutiveIllegalAccessCount) {
+        int nextCount = consecutiveIllegalAccessCount + 1;
+        String deviceCacheKey = FQRegisterKeyService.buildDeviceCacheKey(currentDevice);
+
+        log.warn("检测到ILLEGAL_ACCESS，attempt={}/{}, consecutiveCount={}, threshold={}, deviceId={}, deviceCacheKey={}, key_register_ts={}, fixedDevice={}",
+            attempt,
+            maxAttempts,
+            nextCount,
+            ILLEGAL_ACCESS_RECOVERY_THRESHOLD,
+            currentDevice != null ? currentDevice.getDeviceId() : null,
+            deviceCacheKey,
+            registerKeyService.getKeyRegisterTs(currentDevice),
+            requestedDevice != null);
+
+        if (nextCount < ILLEGAL_ACCESS_RECOVERY_THRESHOLD) {
+            return nextCount;
+        }
+
+        performIllegalAccessTripleRecovery(currentDevice, requestedDevice, attempt, maxAttempts, nextCount);
+        return 0;
+    }
+
+    private void performIllegalAccessTripleRecovery(
+            DeviceInfo currentDevice,
+            DeviceInfo requestedDevice,
+            int attempt,
+            int maxAttempts,
+            int consecutiveIllegalAccessCount) {
+        String deviceCacheKey = FQRegisterKeyService.buildDeviceCacheKey(currentDevice);
+        log.warn("触发ILLEGAL_ACCESS三联恢复，attempt={}/{}, consecutiveCount={}, threshold={}, deviceId={}, deviceCacheKey={}, fixedDevice={}",
+            attempt,
+            maxAttempts,
+            consecutiveIllegalAccessCount,
+            ILLEGAL_ACCESS_RECOVERY_THRESHOLD,
+            currentDevice != null ? currentDevice.getDeviceId() : null,
+            deviceCacheKey,
+            requestedDevice != null);
+
+        try {
+            registerKeyService.clearCache();
+            log.info("ILLEGAL_ACCESS三联恢复步骤完成：registerkey缓存已清理");
+        } catch (Exception ex) {
+            log.warn("ILLEGAL_ACCESS三联恢复步骤失败：清理registerkey缓存", ex);
+        }
+
+        try {
+            devicePoolService.rebuildPool();
+            log.info("ILLEGAL_ACCESS三联恢复步骤完成：设备池已重建");
+        } catch (Exception ex) {
+            log.warn("ILLEGAL_ACCESS三联恢复步骤失败：重建设备池", ex);
+        }
+
+        try {
+            fqEncryptServiceWorker.reset();
+            log.info("ILLEGAL_ACCESS三联恢复步骤完成：签名引擎已重置");
+        } catch (Exception ex) {
+            log.warn("ILLEGAL_ACCESS三联恢复步骤失败：重置签名引擎", ex);
+        }
+    }
+
+    private boolean isIllegalAccessResponse(String responseBody) {
+        return responseBody != null
+            && (responseBody.contains("\"code\":110") || responseBody.contains("ILLEGAL_ACCESS"));
     }
 
     private String previewContent(String content) {

@@ -20,8 +20,10 @@ import java.util.concurrent.TimeUnit;
 public class FQEncryptServiceWorker extends Worker {
 
     private UnidbgProperties unidbgProperties;
-    private WorkerPool pool;
+    private volatile WorkerPool pool;
     private FQEncryptService fqEncryptService;
+    private int poolSize = 4;
+    private final Object resetLock = new Object();
 
     @Autowired
     public void init(UnidbgProperties unidbgProperties) {
@@ -42,9 +44,9 @@ public class FQEncryptServiceWorker extends Worker {
         super(WorkerPoolFactory.create(FQEncryptServiceWorker::new, Runtime.getRuntime().availableProcessors()));
         this.unidbgProperties = unidbgProperties;
         if (this.unidbgProperties.isAsync()) {
-            pool = WorkerPoolFactory.create(pool -> new FQEncryptServiceWorker(unidbgProperties.isDynarmic(),
-                unidbgProperties.isVerbose(), pool), Math.max(poolSize, 4));
-            log.info("FQ签名服务线程池大小为:{}", Math.max(poolSize, 4));
+            this.poolSize = Math.max(poolSize, 4);
+            pool = createAsyncPool();
+            log.info("FQ签名服务线程池大小为:{}", this.poolSize);
         } else {
             this.fqEncryptService = new FQEncryptService(unidbgProperties);
         }
@@ -74,12 +76,16 @@ public class FQEncryptServiceWorker extends Worker {
 
         if (this.unidbgProperties.isAsync()) {
             // 异步模式使用工作池
+            WorkerPool currentPool = pool;
+            if (currentPool == null) {
+                throw new IllegalStateException("FQ签名线程池不可用");
+            }
             while (true) {
-                if ((worker = pool.borrow(2, TimeUnit.SECONDS)) == null) {
+                if ((worker = currentPool.borrow(2, TimeUnit.SECONDS)) == null) {
                     continue;
                 }
                 result = worker.doWork(url, headers);
-                pool.release(worker);
+                currentPool.release(worker);
                 break;
             }
         } else {
@@ -107,12 +113,16 @@ public class FQEncryptServiceWorker extends Worker {
 
         if (this.unidbgProperties.isAsync()) {
             // 异步模式使用工作池
+            WorkerPool currentPool = pool;
+            if (currentPool == null) {
+                throw new IllegalStateException("FQ签名线程池不可用");
+            }
             while (true) {
-                if ((worker = pool.borrow(2, TimeUnit.SECONDS)) == null) {
+                if ((worker = currentPool.borrow(2, TimeUnit.SECONDS)) == null) {
                     continue;
                 }
                 result = worker.doWorkWithMap(url, headerMap);
-                pool.release(worker);
+                currentPool.release(worker);
                 break;
             }
         } else {
@@ -139,11 +149,56 @@ public class FQEncryptServiceWorker extends Worker {
         return fqEncryptService.generateSignatureHeaders(url, headerMap);
     }
 
-    @SneakyThrows
+    public void reset() {
+        synchronized (resetLock) {
+            if (this.unidbgProperties.isAsync()) {
+                WorkerPool previousPool = this.pool;
+                this.pool = null;
+                if (previousPool != null) {
+                    try {
+                        previousPool.close();
+                    } catch (Exception e) {
+                        log.warn("关闭旧签名线程池失败，继续重建", e);
+                    }
+                }
+                this.pool = createAsyncPool();
+                log.info("FQ签名线程池重置完成，poolSize={}", this.poolSize);
+                return;
+            }
+
+            if (fqEncryptService == null) {
+                fqEncryptService = new FQEncryptService(unidbgProperties);
+            } else {
+                fqEncryptService.reset();
+            }
+            log.info("FQ签名服务重置完成（同步模式）");
+        }
+    }
+
+    private WorkerPool createAsyncPool() {
+        return WorkerPoolFactory.create(pool -> new FQEncryptServiceWorker(
+            unidbgProperties.isDynarmic(),
+            unidbgProperties.isVerbose(),
+            pool
+        ), poolSize);
+    }
+
     @Override
     public void destroy() {
-        if (fqEncryptService != null) {
-            fqEncryptService.destroy();
+        synchronized (resetLock) {
+            WorkerPool previousPool = this.pool;
+            this.pool = null;
+            if (previousPool != null) {
+                try {
+                    previousPool.close();
+                } catch (Exception e) {
+                    log.warn("关闭签名线程池失败", e);
+                }
+            }
+
+            if (fqEncryptService != null) {
+                fqEncryptService.destroy();
+            }
         }
     }
 }
