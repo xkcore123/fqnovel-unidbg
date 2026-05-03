@@ -13,6 +13,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.web.client.RestTemplate;
 import org.springframework.web.util.UriComponentsBuilder;
 
+import javax.annotation.Resource;
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.nio.charset.StandardCharsets;
@@ -32,8 +33,14 @@ public class DeviceRegisterClientService {
     private static final String REGISTER_URL = "https://log5-applog.fqnovel.com/service/2/device_register/";
     private static final List<String> ROM_VALUES = Arrays.asList("1414", "1415", "1416", "1417", "1418", "1419", "1420");
 
-    private final RestTemplate restTemplate = new RestTemplate();
-    private final ObjectMapper objectMapper = new ObjectMapper();
+    private final RestTemplate restTemplate;
+    
+    @Resource
+    private ObjectMapper objectMapper;
+
+    public DeviceRegisterClientService(RestTemplate restTemplate) {
+        this.restTemplate = restTemplate;
+    }
 
     public boolean registerDevice(DeviceInfo deviceInfo) {
         if (deviceInfo == null) {

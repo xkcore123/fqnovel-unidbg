@@ -37,7 +37,8 @@ public class FQRegisterKeyService {
     @Resource
     private DevicePoolService devicePoolService;
 
-    private final RestTemplate restTemplate = new RestTemplate();
+    @Resource
+    private RestTemplate restTemplate;
 
     private final Map<String, DeviceRegisterKeyCache> registerKeyCacheByDevice = new ConcurrentHashMap<>();
 

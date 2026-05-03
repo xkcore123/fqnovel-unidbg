@@ -9,6 +9,7 @@ import org.springframework.http.*;
 import org.springframework.stereotype.Service;
 import org.springframework.web.client.RestTemplate;
 
+import javax.annotation.PostConstruct;
 import javax.annotation.Resource;
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
@@ -16,6 +17,7 @@ import java.net.URI;
 import java.nio.charset.StandardCharsets;
 import java.util.*;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ExecutorService;
 import java.util.zip.GZIPInputStream;
 
 /**
@@ -35,8 +37,14 @@ public class FQSearchService {
     @Resource
     private DevicePoolService devicePoolService;
 
-    private final RestTemplate restTemplate = new RestTemplate();
-    private final ObjectMapper objectMapper = new ObjectMapper();
+    @Resource
+    private RestTemplate restTemplate;
+
+    @Resource(name = "bizExecutor")
+    private ExecutorService bizExecutor;
+
+    @Resource
+    private ObjectMapper objectMapper;
 
     /**
      * 搜索书籍 - 增强版，支持两阶段搜索

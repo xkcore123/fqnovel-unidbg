@@ -8,6 +8,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import reactor.core.publisher.Flux;
 
+import javax.annotation.Resource;
 import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
@@ -15,7 +16,6 @@ import java.net.http.HttpResponse;
 import java.util.*;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
 import java.util.stream.Collectors;
 
 /**
@@ -34,9 +34,12 @@ public class FullBookDownloadService {
     @Autowired
     private RedisService redisService;
 
-    private final ExecutorService executorService = Executors.newFixedThreadPool(4);
+    @Resource(name = "bizExecutor")
+    private ExecutorService bizExecutor;
+
     private final HttpClient httpClient = HttpClient.newHttpClient();
-    private final ObjectMapper objectMapper = new ObjectMapper();
+    @Resource
+    private ObjectMapper objectMapper;
 
     /**
      * 全本下载（流式返回）
@@ -256,7 +259,7 @@ public class FullBookDownloadService {
                     log.error("全本下载异常", e);
                     sink.error(e);
                 }
-            }, executorService);
+            }, bizExecutor);
         });
     }
 
@@ -288,7 +291,7 @@ public class FullBookDownloadService {
                 log.error("获取已下载章节列表失败 - bookId: {}", bookId, e);
                 return new ArrayList<>();
             }
-        }, executorService);
+        }, bizExecutor);
     }
 
     /**
@@ -352,7 +355,7 @@ public class FullBookDownloadService {
                 log.error("获取下载进度失败 - bookId: {}", bookId, e);
                 return Collections.singletonMap("error", "获取下载进度失败: " + e.getMessage());
             }
-        }, executorService);
+        }, bizExecutor);
     }
 
     /**
@@ -368,7 +371,7 @@ public class FullBookDownloadService {
                 log.error("删除已下载章节失败 - bookId: {}", bookId, e);
                 return false;
             }
-        }, executorService);
+        }, bizExecutor);
     }
 
     /**
@@ -451,7 +454,7 @@ public class FullBookDownloadService {
                 log.error("获取书籍章节ID失败 - bookId: {}", bookId, e);
                 return new ArrayList<>();
             }
-        }, executorService);
+        }, bizExecutor);
     }
 
     /**
@@ -512,7 +515,7 @@ public class FullBookDownloadService {
                 log.error("自动恢复下载失败 - bookId: {}", bookId, e);
                 return AutoResumeResult.error("自动恢复下载失败: " + e.getMessage());
             }
-        }, executorService);
+        }, bizExecutor);
     }
 
     /**
@@ -581,7 +584,7 @@ public class FullBookDownloadService {
                 log.error("批量自动恢复下载失败", e);
                 return AutoResumeAllResult.error("批量自动恢复下载失败: " + e.getMessage());
             }
-        }, executorService);
+        }, bizExecutor);
     }
 
     /**
@@ -691,7 +694,7 @@ public class FullBookDownloadService {
                 log.error("检查所有书籍状态失败", e);
                 return CheckAllStatusResult.error("检查所有书籍状态失败: " + e.getMessage());
             }
-        }, executorService);
+        }, bizExecutor);
     }
 
     /**

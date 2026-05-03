@@ -6,9 +6,13 @@ import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.data.redis.connection.RedisConnection;
+import org.springframework.data.redis.core.Cursor;
 import org.springframework.data.redis.core.RedisTemplate;
+import org.springframework.data.redis.core.ScanOptions;
 import org.springframework.stereotype.Service;
 
+import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.List;
 import java.util.Set;
@@ -242,7 +246,7 @@ public class RedisService {
     public void deleteBook(String bookId) {
         try {
             String pattern = "book:" + bookId + ":*";
-            Set<String> keys = redisTemplate.keys(pattern);
+            Set<String> keys = scanKeys(pattern);
             if (keys != null && !keys.isEmpty()) {
                 redisTemplate.delete(keys);
                 log.info("删除作品所有数据成功 - bookId: {}, 删除数量: {}", bookId, keys.size());
@@ -256,33 +260,46 @@ public class RedisService {
      * 获取所有书籍相关的Redis key
      */
     public Set<String> getAllBookKeys() {
-        try {
-            Set<String> allKeys = new java.util.HashSet<>();
-            
-            // 获取所有书籍信息key
-            Set<String> bookInfoKeys = redisTemplate.keys("book:*:info");
-            if (bookInfoKeys != null) {
-                allKeys.addAll(bookInfoKeys);
-            }
-            
-            // 获取所有书籍章节列表key
-            Set<String> bookChaptersKeys = redisTemplate.keys("book:*:chapters");
-            if (bookChaptersKeys != null) {
-                allKeys.addAll(bookChaptersKeys);
-            }
-            
-            // 获取所有novel章节列表key
-            Set<String> novelChaptersKeys = redisTemplate.keys("novel:book:chapters:*");
-            if (novelChaptersKeys != null) {
-                allKeys.addAll(novelChaptersKeys);
-            }
-            
-            log.debug("获取到 {} 个书籍相关的Redis key", allKeys.size());
-            return allKeys;
-            
-        } catch (Exception e) {
-            log.error("获取所有书籍key失败", e);
-            return new java.util.HashSet<>();
+        Set<String> allKeys = new java.util.HashSet<>();
+        
+        Set<String> bookInfoKeys = scanKeys("book:*:info");
+        if (bookInfoKeys != null) {
+            allKeys.addAll(bookInfoKeys);
         }
+        
+        Set<String> bookChaptersKeys = scanKeys("book:*:chapters");
+        if (bookChaptersKeys != null) {
+            allKeys.addAll(bookChaptersKeys);
+        }
+        
+        Set<String> novelChaptersKeys = scanKeys("novel:book:chapters:*");
+        if (novelChaptersKeys != null) {
+            allKeys.addAll(novelChaptersKeys);
+        }
+        
+        log.debug("获取到 {} 个书籍相关的Redis key", allKeys.size());
+        return allKeys;
+    }
+
+    private Set<String> scanKeys(String pattern) {
+        Set<String> keys = new java.util.HashSet<>();
+        try {
+            redisTemplate.execute((RedisConnection connection) -> {
+                try (Cursor<byte[]> cursor = connection.scan(ScanOptions.scanOptions()
+                        .match(pattern)
+                        .count(100)
+                        .build())) {
+                    while (cursor.hasNext()) {
+                        keys.add(new String(cursor.next(), StandardCharsets.UTF_8));
+                    }
+                } catch (Exception e) {
+                    log.warn("SCAN执行失败 - pattern: {}", pattern, e);
+                }
+                return null;
+            });
+        } catch (Exception e) {
+            log.error("SCAN执行异常 - pattern: {}", pattern, e);
+        }
+        return keys;
     }
 }
