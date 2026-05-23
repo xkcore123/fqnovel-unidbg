@@ -4,20 +4,20 @@ import lombok.Data;
 
 /**
  * 段评统计请求 DTO
- * 对应接口: POST /novel/commentapi/idea/list/{chapter_id}/v1
+ * 对应接口: POST /novel/commentapi/idea/list/:item_id/v1/
  */
 @Data
 public class FQCommentIdeaRequest {
 
-    /** 章节ID */
+    /** 章节ID（对应API路径参数 item_id） */
     private String chapterId;
 
-    /** 应用ID (query param) */
-    private String aid;
+    /** 书籍ID（用于business_param） */
+    private String bookId;
 
-    /** 安装ID (query param) */
-    private String iid;
+    /** 评论来源，默认2(段评 NovelParaComment) */
+    private Integer commentSource = 2;
 
-    /** 项目版本 (body param) */
-    private String itemVersion = "1";
+    /** 分组类型，默认15(Item) */
+    private Integer groupType = 15;
 }
