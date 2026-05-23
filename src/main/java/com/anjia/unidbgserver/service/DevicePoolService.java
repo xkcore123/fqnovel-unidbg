@@ -108,6 +108,42 @@ public class DevicePoolService {
         }
     }
 
+    public boolean removeDeviceById(String deviceId) {
+        if (!isEnabled() || !notBlank(deviceId)) {
+            return false;
+        }
+        synchronized (poolLock) {
+            int beforeSize = devicePool.size();
+            devicePool.removeIf(device -> deviceId.trim().equals(device.getDeviceId()));
+            int removed = beforeSize - devicePool.size();
+            if (removed > 0) {
+                log.info("手动移除设备 deviceId={}, 池中剩余 {} 个设备", deviceId, devicePool.size());
+                replenishPoolLocked();
+                return true;
+            }
+            return false;
+        }
+    }
+
+    public boolean addDevice() {
+        if (!isEnabled()) {
+            return false;
+        }
+        synchronized (poolLock) {
+            if (devicePool.size() >= getTargetPoolSize()) {
+                log.info("设备池已满 ({}), 跳过添加", devicePool.size());
+                return false;
+            }
+            DeviceInfo deviceInfo = createAndRegisterDevice();
+            if (deviceInfo != null) {
+                devicePool.add(deviceInfo);
+                log.info("手动添加设备成功 deviceId={}, 当前池大小 {}", deviceInfo.getDeviceId(), devicePool.size());
+                return true;
+            }
+            return false;
+        }
+    }
+
     public Map<String, Object> getPoolStatus() {
         Map<String, Object> status = new HashMap<>();
         status.put("enabled", isEnabled());

@@ -15,13 +15,13 @@ java -jar target/unidbg-boot-server-0.0.1-SNAPSHOT.jar
 ./run.sh
 ```
 
-- `pom.xml` 目标为 Java 1.8，但 **推荐用 Java 11/17 运行**；Java 21+ 有 bug 不处理
+- `pom.xml` 编译目标为 Java 11，**推荐用 Java 11/17 运行**；Java 21+ 有 bug 不处理
 - `pom.xml` 中 `<maven.test.skip>true</maven.test.skip>`，测试默认跳过
 - 默认端口 `8099`（`application.yml`），监听 `0.0.0.0`
 
 ## 关键架构
 
-### 6 个 API 路由前缀
+### 9 个 API 路由前缀
 
 | 前缀 | 控制器 | 职责 |
 |------|--------|------|
@@ -30,6 +30,9 @@ java -jar target/unidbg-boot-server-0.0.1-SNAPSHOT.jar
 | `/api/fullbook` | `FullBookDownloadController` | 全本下载（流式、进度、自动恢复） |
 | `/api/device` | `DeviceManagementController` | 设备注册、设备池管理 |
 | `/api/fq-signature` | `FQEncryptController` | so 签名生成（调用 unidbg 模拟 `libmetasec_ml.so`） |
+| `/api/fqcomment` | `FQCommentController` | 段评统计与详情查询 |
+| `/api/legado` | `LegadoCommentController` | Legado 书源段评聚合接口 |
+| `/api/admin` | `AdminController` | 管理后台（配置、监控、热重载、设备池管理） |
 | `/api/cache` | `CacheController` | Redis 缓存查看/删除 |
 
 ### Unidbg 核心
@@ -63,7 +66,7 @@ java -jar target/unidbg-boot-server-0.0.1-SNAPSHOT.jar
 
 ```
 src/main/java/com/anjia/unidbgserver/
-  web/          — 控制器（6 个 Controller 对应 6 个路由前缀）
+  web/          — 控制器（9 个 Controller 对应 9 个路由前缀）
   service/      — 业务逻辑（FQEncryptService, DevicePoolService, FullBookDownloadService...）
   unidbg/       — IdleFQ，unidbg 模拟核心
   config/       — Spring 配置类（FQApiProperties, UnidbgProperties, JacksonConfig）

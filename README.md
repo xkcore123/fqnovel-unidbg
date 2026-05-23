@@ -16,12 +16,15 @@
 - 书籍搜索、目录查询、章节获取（单章/批量）
 - 全本下载（流式返回、进度查询、自动恢复）
 - 设备注册、配置更新、设备池管理
-- FQ 签名生成接口
+- FQ 签名生成接口（unidbg 模拟 `libmetasec_ml.so`）
+- 段评查询（统计/详情）
+- Legado（阅读3）书源段评聚合接口
+- Admin 管理后台（配置查看/编辑、热重载、JVM 监控、设备池管理）
 - Redis 缓存查看与删除接口
 
 ## 环境要求
 
-- JDK 11+（`pom.xml` 编译目标为 1.8）
+- JDK 11+（`pom.xml` 编译目标为 11）
 - Maven 3.6+
 - Redis（用于缓存与部分功能支持，可不选择）
 - Linux/macOS（脚本默认按类 Unix 环境编写）
@@ -35,9 +38,17 @@
 ```yml
 server:
   port: 8099
+  address: 0.0.0.0
+
+application:
+  unidbg:
+    dynarmic: false      # 是否启用 dynarmic 后端
+    verbose: false       # 是否输出详细 unidbg 日志（生产应关闭）
+    async: true          # 是否启用异步签名 WorkerPool
 
 fq:
   api:
+    base-url: https://api5-normal-sinfonlineb.fqnovel.com
     device-pool:
       enabled: true
       size: 5
@@ -71,7 +82,7 @@ java -jar target/unidbg-boot-server-0.0.1-SNAPSHOT.jar
 
 ```bash
 mvn package -T10 -DskipTests
-java -jar target\unidbg-boot-server-0.0.1-SNAPSHOT.jar
+java -jar target/unidbg-boot-server-0.0.1-SNAPSHOT.jar
 ```
 
 方式三（编译为docker镜像，未试验）：参考[anjia0532/unidbg-boot-server](https://github.com/anjia0532/unidbg-boot-server)
@@ -149,14 +160,101 @@ curl -X POST 'http://127.0.0.1:8099/api/fqnovel/chapters/batch' \
 - `GET /value?key=...`
 - `GET /delete?key=...`
 
+### 7) 段评接口 `/api/fqcomment`
+
+> aid/iid 由服务端从设备池自动获取，itemVersion 固定为 `"1"`，请求中无需传入。
+
+- `POST /idea`：段评统计（获取章节各段落的评论数量统计）
+- `POST /list`：段评详情（获取某段落的具体评论内容）
+- `GET /health`：健康检查
+
+示例：
+
+```bash
+# 段评统计（仅需传入 chapterId）
+curl -X POST 'http://127.0.0.1:8099/api/fqcomment/idea' \
+  -H 'Content-Type: application/json' \
+  -d '{"chapterId": "6707197312789119502"}'
+
+# 段评详情
+curl -X POST 'http://127.0.0.1:8099/api/fqcomment/list' \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "chapterId": "6707197312789119502",
+    "bookId": "6707112755507235848",
+    "paraIndex": 0
+  }'
+```
+
+### 8) Admin 管理接口 `/api/admin`
+
+Admin 管理后台，提供配置管理、系统监控、设备池管理等功能。也提供了一个 Web 管理页面（`/admin/index.html`）。
+
+- `GET /config`：查看当前 YAML 配置
+- `PUT /config`：更新 YAML 配置（保存后需热重载或重启生效）
+- `POST /refresh`：热重载配置（需 `spring-cloud-context`）
+- `POST /restart`：重启项目
+- `GET /monitor`：JVM 监控（内存、线程、设备池、Redis、HTTP 客户端、磁盘）
+- `GET /device-pool`：设备池状态
+- `POST /device-pool/rebuild`：重建设备池
+- `POST /device-pool/remove?deviceId=...`：移除指定设备
+- `POST /device-pool/add`：添加新设备
+- `GET /health`：健康检查
+
+> 浏览器访问 `http://127.0.0.1:8099/api/admin` 将重定向到 Web 管理页面。
+
+### 9) Legado 书源段评聚合接口 `/api/legado`
+
+为 Legado（阅读3）书源提供段评聚合查询。
+
+- `POST /comment`：获取段评（聚合统计+详情），适配 Legado 书源格式
+
+示例：
+
+```bash
+curl -X POST 'http://127.0.0.1:8099/api/legado/comment' \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "bookId": "7276384138653862966",
+    "chapterId": "7422333445566778899",
+    "paraIndex": 0,
+    "count": 20
+  }'
+```
+
+响应：
+```json
+{
+  "comments": ["评论1", "评论2"],
+  "commentCount": 2,
+  "hasMore": false,
+  "nextCursor": ""
+}
+```
+
 ## 目录说明
 
-- `src/main/java/com/anjia/unidbgserver/web/`：控制器接口层
-- `src/main/java/com/anjia/unidbgserver/service/`：业务实现
+- `src/main/java/com/anjia/unidbgserver/web/`：控制器接口层（9 个 Controller）
+  - `FQNovelController` — `/api/fqnovel` 小说内容
+  - `FQSearchController` — `/api/fqsearch` 搜索与目录
+  - `FullBookDownloadController` — `/api/fullbook` 全本下载
+  - `DeviceManagementController` — `/api/device` 设备管理
+  - `FQEncryptController` — `/api/fq-signature` 签名生成
+  - `FQCommentController` — `/api/fqcomment` 段评
+  - `LegadoCommentController` — `/api/legado` Legado 段评聚合
+  - `AdminController` — `/api/admin` 管理后台
+  - `CacheController` — `/api/cache` Redis 缓存
+- `src/main/java/com/anjia/unidbgserver/service/`：业务实现（17 个 Service）
+- `src/main/java/com/anjia/unidbgserver/unidbg/`：IdleFQ，unidbg 模拟核心
+- `src/main/java/com/anjia/unidbgserver/config/`：Spring 配置类（5 个 Config）
+- `src/main/java/com/anjia/unidbgserver/dto/`：请求/响应 DTO
+- `src/main/java/com/anjia/unidbgserver/utils/`：工具类
 - `src/main/resources/com/dragon/read/oversea/gp/`：unidbg 运行资源
 - `src/main/resources/legado/fqnovel.json`：Legado 书源配置
+- `src/main/resources/static/admin/`：Admin Web 管理页面
 - `tools/`：辅助脚本（设备注册、导出合并等）
 - `docs/`：项目文档
+- `results/`：全本下载输出
 
 ## 注意事项
 
@@ -166,6 +264,8 @@ curl -X POST 'http://127.0.0.1:8099/api/fqnovel/chapters/batch' \
 
 ## 相关文档
 
+- `AGENTS.md`：项目架构与开发指南（AI 辅助开发用）
+- `API.md`：段评接口详细文档（逆向分析、字段说明、调用流程）
 - `docs/FQNOVEL_API.md`：接口细节
 - `docs/PROJECT_STATUS.md`：项目状态
 - `docs/README.md`：文档索引

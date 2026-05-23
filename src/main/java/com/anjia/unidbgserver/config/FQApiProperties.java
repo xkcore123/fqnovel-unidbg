@@ -2,14 +2,12 @@ package com.anjia.unidbgserver.config;
 
 import lombok.Data;
 import org.springframework.boot.context.properties.ConfigurationProperties;
+import org.springframework.cloud.context.config.annotation.RefreshScope;
 import org.springframework.stereotype.Component;
 
-/**
- * FQ API 配置属性
- * 用于管理FQ API的设备参数和请求配置
- */
 @Data
 @Component
+@RefreshScope
 @ConfigurationProperties(prefix = "fq.api")
 public class FQApiProperties {
     
@@ -32,6 +30,11 @@ public class FQApiProperties {
      * 设备参数配置
      */
     private Device device = new Device();
+
+    /**
+     * 段评API域名（commentapi路由可能不在海外版域名上，需按需配置）
+     */
+    private String commentApiBaseUrl = "https://api.fqnovel.com";
 
     /**
      * 设备池配置
