@@ -23,7 +23,7 @@ jobs:
         uses: aormsby/Fork-Sync-With-Upstream-action@v3.4
         with:
           # 目标仓库的Token，用于推送代码，使用GitHub自动生成的密钥即可
-          target_repo_token: ${{ secrets.GITHUB_TOKEN }}
+          target_repo_token: ${{ secrets.SYNC_FORK_TOKEN }}
           # 上游仓库的完整路径 (格式: 用户名/仓库名)
           upstream_sync_repo: mtongle/fqnovel-unidbg
           # 要同步的上游分支名称
