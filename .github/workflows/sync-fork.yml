@@ -9,6 +9,7 @@ on:
 
 permissions:
   contents: write # 授权写入仓库代码
+  workflows: write
 
 jobs:
   sync-with-upstream:
