@@ -4,23 +4,23 @@
 
 ## 书源文件
 
-### 1. fqnovel-booksource.json
-- **名称**: FQNovel API
+### 1. fqnovel.json
+- **名称**: FQNovel-unidbg
 - **类型**: 标准书源
-- **功能**: 支持书籍搜索、详情获取、目录浏览、单章节内容获取
-- **特点**: 稳定可靠，适合日常使用
+- **功能**: 支持搜索、发现（热门推荐/最近更新）、详情获取、目录浏览、单章节内容获取、搜索分页
+- **特点**: 稳定可靠，适合日常使用；禁用 CookieJar 减少无关请求；多发现分类
 
 ### 2. fqnovel-batch-booksource.json  
-- **名称**: FQNovel 批量API
-- **类型**: 批量书源
-- **功能**: 支持批量获取章节内容，提高阅读体验
-- **特点**: 性能更好，适合连续阅读
+- **名称**: FQNovel-unidbg (批量)
+- **类型**: 标准书源（批量优化版）
+- **功能**: 与标准版相同，超时时间更长（300s），适合连续阅读场景
+- **特点**: 可与标准版同时导入，互为备用；启用后可在 Legado 中灵活切换
 
 ## 使用方法
 
 ### 1. 启动 FQNovel API 服务
 ```bash
-# 确保服务在 localhost:9999 运行
+# 确保服务在 localhost:8099 运行（默认端口）
 java -jar target/unidbg-boot-server-0.0.1-SNAPSHOT.jar
 ```
 
@@ -52,7 +52,20 @@ java -jar target/unidbg-boot-server-0.0.1-SNAPSHOT.jar
 - `offset`: 分页偏移量
 - `count`: 每页数量
 
-## 配置自定义
+### 3. 段评接口（书源专用聚合）
+- **接口**: `POST /api/legado/comment`
+- **请求体**:
+  - `bookId` 书籍ID
+  - `chapterId` 章节ID
+  - `paraIndex` 段落索引（从1开始）
+  - `count` 可选，默认20
+  - `cursor` 可选，分页游标
+- **返回结构**:
+  - `data.comments`: 段评文本数组
+  - `data.commentCount`: 本次返回数量
+  - `data.hasMore`: 是否有下一页
+  - `data.nextCursor`: 下一页游标
+
 
 ### 修改服务地址
 如果 FQNovel API 服务部署在其他地址，需要修改以下字段:

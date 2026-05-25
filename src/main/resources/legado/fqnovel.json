@@ -1,18 +1,19 @@
 [
     {
-        "bookSourceComment": "FQNovel-unidbg书源",
+        "bookSourceComment": "FQNovel-unidbg书源 - 自建API,支持搜索/发现/详情/目录/章节，使用单章接口；段评聚合接口: POST /api/legado/comment",
         "bookSourceGroup": "FQNovel",
         "bookSourceName": "FQNovel-unidbg",
         "bookSourceType": 0,
         "bookSourceUrl": "http://[替换为你的ip或域名]:[你的端口号]",
         "customOrder": 2,
         "enabled": true,
-        "enabledCookieJar": true,
+        "enabledCookieJar": false,
         "enabledExplore": true,
-        "exploreUrl": "搜索::http://[替换为你的ip或域名]:[你的端口号]/api/fqsearch/books?query={{key}}&offset={{(page-1)*20}}&count=20",
+        "exploreUrl": "搜索::http://[替换为你的ip或域名]:[你的端口号]/api/fqsearch/books?query={{key}}&offset={{(page-1)*20}}&count=20\n热门推荐::http://[替换为你的ip或域名]:[你的端口号]/api/fqsearch/books?query=推荐&offset=0&count=20\n最近更新::http://[替换为你的ip或域名]:[你的端口号]/api/fqsearch/books?query=最新&offset=0&count=20",
         "header": "Content-Type: application/json\nUser-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
         "lastUpdateTime": 1754302417608,
         "respondTime": 180000,
+        "customCommentApi": "POST /api/legado/comment | body: {bookId,chapterId,paraIndex,count,cursor}",
         "ruleBookInfo": {
             "author": "$.data.author",
             "coverUrl": "$.data.coverUrl",
@@ -20,7 +21,7 @@
             "kind": "$.data.category",
             "lastChapter": "$.data.lastChapterTitle",
             "name": "$.data.bookName",
-            "tocUrl": "http://[替换为你的ip或域名]:[你的端口号]/api/fqsearch/directory/{{$.data.bookId}}\n<js>\njava.put(\"book_id\", java.getString(\"$.data.bookId\"))\nresult\n</js>",
+            "tocUrl": "@js:\nvar bid = java.getString('$.data.bookId');\njava.put('book_id', bid);\nsource.bookSourceUrl + '/api/fqsearch/directory/' + bid",
             "wordCount": "$.data.wordNumber"
         },
         "ruleContent": {
